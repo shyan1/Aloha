@@ -1,0 +1,13 @@
+- https://www.youtube.com/@leetcodeWithCarter/playlists
+- https://lhbg-book.link/
+- https://langdev.stackexchange.com/
+- https://v2.ocaml.org/manual/doccomments.html
+- https://dev.realworldocaml.org/variants.html
+- https://www.youtube.com/watch?v=p7Qdl_XwHXA
+- https://www.youtube.com/watch?v=H3Bizwx_L1o
+- https://www.youtube.com/watch?v=ZymD5NuOwdA
+- https://www.youtube.com/watch?v=N2XS92qrLUc&t=2092s&ab_channel=DebConfVideos
+- https://new.qq.com/rain/a/20230621A018RF00
+- http://xahlee.info/emacs/emacs/emacs.html
+- https://typetheorypodcast.com/
+- 
