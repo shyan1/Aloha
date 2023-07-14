@@ -10,4 +10,7 @@
 - https://new.qq.com/rain/a/20230621A018RF00
 - http://xahlee.info/emacs/emacs/emacs.html
 - https://typetheorypodcast.com/
+
+- https://pekko.apache.org/docs/pekko/current/index.html
+- https://laminar.dev/blog/2023/07/13/laminar-v16.0.0
 - 
