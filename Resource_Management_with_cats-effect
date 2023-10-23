@@ -1,0 +1,267 @@
+Resource Management with cats-effect   - https://www.youtube.com/watch?v=kulQZMl99VY
+
+Resource
+- 1. Initialization
+- 2. Usage
+- 3. Finalization
+
+Example 1: File
+- 1. Open a file
+- 2. Read/Write data into the file
+- 3. Close the file
+
+Example 2: HTTP Server
+- 1. Configure and start an HTTP server
+- 2. Serve HTTP requests
+- 3. Close the server
+
+Example 3: Integration Tests
+- 1. Create tables and setup test data
+- 2. Run the tests
+- 3. Drop or truncate the tables
+
+Example 4: Queue
+- 1. Pull an event from a queue
+- 2. Process teh event
+- 3. On error, requeue the event
+
+
+How to ensure the finalization logic is executed ? in all circumstances
+
+- Shutdown Hook
+```
+object Main extends App {
+  val httpServer = ???
+  
+  sys.addShutdownHook {
+    httpServer.close()
+  }
+  
+  httpServer.start()
+}
+```
+
+- Before and After All
+```
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuite
+
+class UserRepositoryTest
+  extends AnyFunSuite
+  with    BeforeAndAfterAll {
+
+  override def beforeAll(): Unit = {
+  	// ...
+  }
+  
+  override def afterAll(): Unit = {
+  	// ...
+  }
+  
+  test("create a new user") {
+    userRepo.create(User("1234", "John", "Doe"))
+    
+    assert(userRepo.get("1234".isDefined)
+  }
+  
+}
+```
+
+- Try-Catch-Finally
+```
+val reader: BufferedReader = ???
+
+try {
+  reader = new BufferedReader(new FileReader("text.txt"))	// FileNotFoundException
+  reader.readline()	// NullPointerException
+} catch {
+  case e: IOException => ???
+} finally {
+  reader.close()	// cannot access variables defined in the `try`
+}
+```
+
+- `Using`		(from package scala.util (from 2.13))
+- `Using` returns a `Try`
+```
+import scala.util.Using
+
+// Close resource automatically
+// Handle multiple errors
+Using {
+  new BufferedReader(new FileReader("text.txt"))
+} { reader =>
+  reader.readline()
+}
+// res: Try[String] = ...
+
+// we'll get 
+//	Success("Hello world")
+// or
+//	Failure(java.io.FileNotFoundException: test.txt)
+```
+
+- `Using` with multiple resources
+```
+import scala.util.Using
+
+Using.Manager { register =>
+  val fileToRead = register(new BufferedReader(new FileReader("file1.txt")))
+  val fileToWrite = register(new BufferedWriter(new FileWriter("file1-copy.txt")))
+  
+  Iterator
+    .continually(reader.readLine())
+    .takeWhile(_ != null)
+    .foreach { line =>
+      writer.write(line)
+      writer.newLine()
+    }
+}
+```
+
+- `Using` under the hood
+```
+object Using {
+  def apply[R: Releasable, A](initialize: => R)(use: R => A): Try[A]
+}
+
+trait Releasable[-R] {
+  def release(initialize: R): Unit // implemented for all AutoCloseable
+}
+```
+
+- `Using` custom finalizer
+```
+Using {
+  val database = ???
+  database.execute(sql"""
+    CREATE TABLE user(
+      id    TEXT PRIMARY KEY,
+      name  TEXT NOT NULL,
+      dob   Date
+    )
+  """)
+} { database =>
+  test("create new user") { ... }
+  test("delete user") { ... }
+} { using () =>		// Only for Scala 3
+  database.execute(sql"DROP TABLE user")
+  database.close()
+}
+```
+
+
+`Using` limitations
+- 1. Finalizer doesn't know if there was an error
+- 2. Only works with synchronous logic
+
+
+
+Resource
+```
+"org.typelevel" %% "cats-effect" % "3.5.1"
+```
+
+```
+
+import cats.effect.kernel.Resource
+
+def fileToRead(path: String): Resource[IO, BufferedReader] = 
+  Source.make(
+    IO(new BufferedReader(new FileReader(path)))
+  )(reader =>
+    IO(reader.close())
+  )	
+//
+
+def fileToRead(path: String): Resource[IO, BufferedReader] = 
+  Resource.fromAutoCloseable(
+    IO(new BufferedReader(new FileReader(path)))
+  )
+
+import cats.effect.IO
+
+fileToRead("text.txt")
+  .use(reader =>
+    IO(reader.readLine())
+  )
+
+```
+// Support Sync and Async
+// Handle errors
+// Handle cancellation
+
+
+Library support
+`Http4s`
+```
+EmberServerBuilder
+  default[IO]
+  .withHost(ipv4"0.0.0.0")
+  .withPort(port"0.0.0.0")
+  build()
+// res: Resource[IO, Server]
+```
+
+`Doobie`
+```
+HikariTransactor.newHikariTransactor[IO](
+  driverClassName	= "org.postgresql.Driver",
+  url			= "postgres://localhost:5432/mydb",
+  user 			= "admi",
+  pass			= "admin"
+  connectEC		= ExecutorContext.global
+)
+// res: Resource[IO, HikariTransaction[IO]]
+```
+
+
+
+```
+import scala.collection.mutable.Queue
+import cats.effect.kernel.Resource.ExitCase._
+
+def requeueOnError[A](queue: Queue[A]): Resource[IO, A] = 
+  Resource.makeCase(
+    IO(queue.dequeue())
+  )( (value, exitCase) => 
+    exitCase match {
+      case Succeeded		=> IO.unit
+      case Errored(_) | Canceled  => IO(queue.enqueue(value))
+    }
+  )
+  .evalTap(value => IO(println(s"Processing $value")))
+  .onFinanlize(IO(println("Queue after finalizer: " + queue)))
+```
+
+```
+import scala.collection.mutable.Queue
+
+val queue: Queue[Int] = Queue(1,2,3,4)
+
+def process(event: Int): IO[Unit] = 
+  if (event == 2) IO.raiseError(new Exception("Boom"))
+  else IO.unit
+  
+val consume1: IO[Unit] = requeueOnError(queue).use(process)
+
+consume1
+  .handleErrorWith(e => IO(println(s"An error occurred: $e")))
+  .replicateA(3)
+  .unsafeRunSync()
+```
+
+Resource summary
+- 1. General solution
+- 2. Support Sync and Async execution
+- 3. Lots of utility methods and constructors
+- 4. 3rd party libraries can expose them
+- 5. Main drawback: it works with an IO-like effect
+
+
+Decision tree
+- If you use Vanilla Scala and/or Akka			Shutdown hooks and Using
+- If you use Typelevel					Resource
+- If you use ZIO					Scope
+
+
